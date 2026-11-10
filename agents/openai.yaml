@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目协作与长期记忆"
+  short_description: "按工种组织多代理与临时生图，将原文和证据保存在本地，按需检索接续项目"
+  default_prompt: "使用 $project-continuity 接入当前项目记忆，按工种安排适合的子 agent，必要时临时生图，主对话简短回传成果并更新本地归档与检查点。"
