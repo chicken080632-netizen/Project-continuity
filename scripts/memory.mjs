@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {taskCommand} from './tasks.mjs';
 // Node 18+, local filesystem only. No background process or account-log access.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -67,26 +68,13 @@ export function run(command, opts) {
     for(const name of ['requirements.md','current.md','decisions.md','preferences.md']) check(name,safe(root,path.join(memory,name)));
     let cueHealth;
     if(fs.existsSync(memory)) {try {cueHealth=cueCommand('cue-verify',root,{});}catch(e){cueHealth={ok:false,error:e.message};}}
-    return {project:root,ok:findings.every(f=>f.state==='ok')&&cueHealth?.ok===true,findings,cueHealth,repairPreview:['init only creates missing templates; it never upgrades existing INDEX or rules.','For needs-update entries, read existing rules, prepare a minimal diff, preserve user content and authorization; do not auto-replace files.'],hostAutoLoad:'not-tested'};
+    const health={};
+    if(fs.existsSync(memory))for(const name of ['verify','memory-health','task-health']){try{health[name]=run(name,{project:root});}catch(e){health[name]={ok:false,error:e.message};}}
+    return {project:root,health,ok:findings.every(f=>f.state==='ok')&&cueHealth?.ok===true&&Object.values(health).every(h=>h.ok===true),findings,cueHealth,repairPreview:['init only creates missing templates; it never upgrades existing INDEX or rules.','For needs-update entries, read existing rules, prepare a minimal diff, preserve user content and authorization; do not auto-replace files.'],hostAutoLoad:'not-tested'};
   }
   if (!fs.existsSync(memory)||!fs.statSync(memory).isDirectory()) throw Error('Initialize memory first');
-  if (['remember','recall','cue-verify','coverage','feedback'].includes(command)) return cueCommand(command,root,opts);
-  if(command==='task-pin'||command==='task-check') {
-    const id=required(opts,'task');if(!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(id))throw Error('Invalid task id');
-    const dir=safe(root,path.join(memory,'tasks',id));
-    const manifest=safe(root,path.join(dir,'revision.json'));
-    if(command==='task-pin') {
-      const input=JSON.parse(fs.readFileSync(required(opts,'input'),'utf8'));
-      if(typeof input.revision!=='string'||!input.revision.trim()||!Array.isArray(input.sources)||!input.sources.length)throw Error('revision and sources required');
-      const sources=input.sources.map(relative=>{if(typeof relative!=='string'||path.isAbsolute(relative))throw Error('Source must be relative');const file=safe(root,path.resolve(root,relative));if(file===manifest)throw Error('Manifest cannot pin itself');return {path:relative,sha256:hash(fs.readFileSync(file))};});
-      fs.mkdirSync(dir,{recursive:true});
-      fs.writeFileSync(manifest,JSON.stringify({revision:input.revision,sources},null,2)+'\n',{flag:'wx'});
-      return {task:id,revision:input.revision,path:manifest};
-    }
-    const pinned=JSON.parse(fs.readFileSync(manifest,'utf8')),failures=[];
-    for(const source of pinned.sources) {try {const file=safe(root,path.resolve(root,source.path));if(hash(fs.readFileSync(file))!==source.sha256)throw Error('Requirements changed');}catch(e){failures.push({source:source.path,error:e.message});}}
-    return {task:id,revision:pinned.revision,ok:!failures.length,failures,note:'A matching revision is necessary, not sufficient, for artifact acceptance.'};
-  }
+  if (['remember','recall','cue-verify','coverage','feedback','memory-health','review-skip','feedback-resolve'].includes(command)) return cueCommand(command,root,opts);
+  if(['task-pin','task-check','task-bind','task-verify','task-health'].includes(command))return taskCommand(command,root,opts);
   if (command === 'archive') {
     const kind = required(opts,'kind');
     if (!['transcript','excerpt','summary','report'].includes(kind)) throw Error('Invalid kind');
@@ -174,7 +162,7 @@ export function run(command, opts) {
     }
     return {path:resolved,files:walk(resolved).length,snapshotVerified:true};
   }
-  throw Error('Commands: init, doctor, coverage, remember, recall, cue-verify, feedback, task-pin, task-check, archive, search, verify, backup');
+  throw Error('Commands: init, doctor, coverage, remember, recall, cue-verify, feedback, feedback-resolve, review-skip, memory-health, task-pin, task-check, task-bind, task-verify, task-health, archive, search, verify, backup');
 }
 function required(opts,key) { if(typeof opts[key]!=='string' || !opts[key].trim()) throw Error(`Missing --${key}`); return opts[key]; }
 if (process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {

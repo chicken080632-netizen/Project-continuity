@@ -1,3 +1,4 @@
+import {load,queryKey,extra} from './reliability.mjs';
 // Cue-based local retrieval, not embedding inference. Feature extraction is done
 // by the agent from visible evidence; this module validates and stores cards.
 import fs from 'node:fs';
@@ -20,16 +21,7 @@ function readText(file) {
   if (fs.statSync(file).size>16*1024*1024) throw Error('Card source exceeds 16 MiB; split into attributed excerpts');
   return new TextDecoder('utf-8',{fatal:true}).decode(fs.readFileSync(file));
 }
-function list(root) {
-  const dir=inside(root,'.project-memory/cues');
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(n=>n.endsWith('.json')).sort().map(n=>{
-    const file=inside(root,`.project-memory/cues/${n}`);
-    const card=JSON.parse(readText(file));
-    if (card.schema!=='project-continuity/cue/1' || `${card.id}.json`!==n) throw Error(`Invalid card: ${file}`);
-    return card;
-  });
-}
+function list(root,warnings=[]) { return load(root,'cues',warnings); }
 function strings(value, field, required=false) {
   if (!Array.isArray(value) || value.length>40 || value.some(v=>typeof v!=='string'||!v.trim()||v.length>160) || (required&&!value.length)) throw Error(`Invalid ${field}`);
   return [...new Set(value.map(v=>v.trim()))];
@@ -57,6 +49,7 @@ function validate(root, raw) {
   return {schema:'project-continuity/cue/1',id:raw.id,title:raw.title,summary:raw.summary,status:raw.status,cues,aliases,entities,context,related,supersedes,quote:raw.quote,source:{...source,sha256:ev.sha256},createdAt:new Date().toISOString()};
 }
 export function cueCommand(command,root,opts) {
+  if(['memory-health','review-skip','feedback-resolve'].includes(command))return extra(command,root,opts,cueCommand);
   if(command==='feedback') {
     const cards=list(root),card=cards.find(c=>c.id===opts.card);
     if(!card) throw Error('Unknown --card');
@@ -73,14 +66,15 @@ export function cueCommand(command,root,opts) {
     return {saved:id,rankingChanged:false,note:'Feedback is evidence to review, not permission to rewrite cards or user requirements.'};
   }
   if(command==='coverage') {
-    const cards=list(root), archive=inside(root,'.project-memory/archive');
+    const coverageWarnings=[],cards=list(root,coverageWarnings), archive=inside(root,'.project-memory/archive');
     const sources=[];
     if(fs.existsSync(archive)) for(const name of fs.readdirSync(archive)) {
       if(name.startsWith('.pending-')) continue;
       const relative=`.project-memory/archive/${name}/payload`;
       try {
         const lines=readText(inside(root,relative)).split(/\r?\n/);
-        const covered=new Set(); const stale=[];
+        const covered=new Set(),skipped=new Set(); const stale=[];
+        for(const rec of load(root,'reviewed',coverageWarnings).filter(r=>r.source.path.replaceAll('\\','/')===relative)){try{if(evidence(root,rec.source).sha256!==rec.source.sha256)throw Error('Changed skip');for(let n=rec.source.startLine;n<=rec.source.endLine;n++)skipped.add(n);}catch{stale.push(rec.id);}}
         for(const card of cards.filter(c=>c.source.path.replaceAll('\\','/')===relative)) {
           try {
             if(evidence(root,card.source).sha256!==card.source.sha256) {stale.push(card.id);continue;}
@@ -88,15 +82,15 @@ export function cueCommand(command,root,opts) {
           } catch {stale.push(card.id);}
         }
         const pending=[];
-        for(let n=1;n<=lines.length;n++) if(lines[n-1].trim()&&!covered.has(n)) {
+        for(let n=1;n<=lines.length;n++) if(lines[n-1].trim()&&!covered.has(n)&&!skipped.has(n)) {
           const last=pending.at(-1);
           if(last&&last.endLine===n-1) last.endLine=n;
           else pending.push({startLine:n,endLine:n});
         }
-        sources.push({path:relative,nonemptyLines:lines.filter(l=>l.trim()).length,coveredLines:[...covered].filter(n=>lines[n-1]?.trim()).length,pending,stale});
+        sources.push({path:relative,nonemptyLines:lines.filter(l=>l.trim()).length,coveredLines:[...covered].filter(n=>lines[n-1]?.trim()).length,reviewedSkippedLines:[...skipped].filter(n=>lines[n-1]?.trim()&&!covered.has(n)).length,pending,stale});
       } catch(e) {sources.push({path:relative,error:e.message});}
     }
-    return {sources,note:'Line coverage is not semantic completeness. Review pending ranges; do not mechanically create cards for greetings or repetitions.'};
+    return {sources,warnings:coverageWarnings,note:'Line coverage is not semantic completeness. Review pending ranges; do not mechanically create cards for greetings or repetitions.'};
   }
   if(command==='remember') {
     if(typeof opts.input!=='string') throw Error('Missing --input');
@@ -105,7 +99,7 @@ export function cueCommand(command,root,opts) {
     if(!raw.length || raw.length>100) throw Error('Batch must contain 1..100 cards');
     let cards=raw.map(card=>validate(root,card));
     if(new Set(cards.map(c=>c.id)).size!==cards.length) throw Error('Duplicate ids in batch');
-    const existing=list(root);
+    const ingestWarnings=[],existing=list(root,ingestWarnings);
     const fingerprint=c=>JSON.stringify([c.source.path.replaceAll('\\','/'),c.source.startLine,c.source.endLine,c.source.sha256,c.quote,c.status,c.summary,[...c.cues].sort(),[...c.aliases].sort(),[...c.entities].sort(),[...c.context].sort(),[...c.related].sort(),[...c.supersedes].sort()]);
     const known=new Map(existing.map(c=>[fingerprint(c),c.id])), skipped=[];
     cards=cards.filter(c=>{
@@ -133,11 +127,11 @@ export function cueCommand(command,root,opts) {
     fs.mkdirSync(dir,{recursive:true});
     // Preflight the whole batch; individual files use exclusive creation.
     for(const card of cards) fs.writeFileSync(path.join(dir,card.id+'.json'),JSON.stringify(card,null,2)+'\n',{flag:'wx'});
-    return {saved:cards.map(c=>c.id),skipped,path:dir};
+    return {saved:cards.map(c=>c.id),skipped,warnings:ingestWarnings,path:dir};
   }
-  const cards=list(root);
+  const warnings=[],cards=list(root,warnings);
   if(command==='cue-verify') {
-    const failures=[];
+    const failures=[...warnings];
     for(const card of cards) {
       try {
         validate(root,card);
@@ -169,16 +163,16 @@ export function cueCommand(command,root,opts) {
     if(score) ranked.push({card,score:score*matched.length,matched});
   }
   ranked.sort((a,b)=>b.score-a.score||a.card.id.localeCompare(b.card.id));
-  const feedbackDir=inside(root,'.project-memory/feedback');
-  const feedback=fs.existsSync(feedbackDir)?fs.readdirSync(feedbackDir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(readText(inside(root,`.project-memory/feedback/${n}`)))):[];
+  const feedback=load(root,'feedback',warnings),resolutions=load(root,'resolutions',warnings);
   const hits=ranked.slice(0,limit).map(({card,score,matched})=>{
     let sourceState='unchanged';
     try {if(evidence(root,card.source).sha256!==card.source.sha256) sourceState='changed';} catch {sourceState='unavailable';}
     const replacedBy=cards.filter(c=>c.supersedes.includes(card.id)).map(c=>c.id);
-    const relevantFeedback=feedback.filter(f=>f.card===card.id&&norm(f.query)===norm(opts.query));
+    const relevantFeedback=feedback.filter(f=>f.card===card.id&&queryKey(f.query)===queryKey(opts.query));
     const feedbackSummary={count:relevantFeedback.length,ratings:{correct:0,irrelevant:0,outdated:0},recent:relevantFeedback.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,3).map(f=>{let sourceState='unchanged';try{if(evidence(root,f.source).sha256!==f.source.sha256)sourceState='changed';}catch{sourceState='unavailable';}return {id:f.id,rating:f.rating,actor:f.actor,reason:f.reason,source:f.source,sourceState};})};
+    feedbackSummary.processing=relevantFeedback.map(f=>{const events=resolutions.filter(r=>r.feedback===f.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));const latest=events[0];let valid=true;if(latest){try{const ev=evidence(root,latest.source);if(ev.sha256!==latest.source.sha256||!ev.text.includes(latest.quote))throw Error('Resolution evidence changed');for(const id of latest.cards){const c=cards.find(c=>c.id===id);if(!c||evidence(root,c.source).sha256!==c.source.sha256)throw Error('Linked card unavailable');}}catch(e){valid=false;warnings.push({file:'resolutions/'+latest.id,error:e.message});}}return {feedback:f.id,state:latest?(valid?latest.state:'needs-review'):'pending',recordedState:latest?.state,cards:latest?.cards??[],events:events.map(e=>e.id)};});
     for(const f of relevantFeedback) if(Object.hasOwn(feedbackSummary.ratings,f.rating))feedbackSummary.ratings[f.rating]++;
     return {id:card.id,title:card.title,summary:card.summary,status:card.status,effectiveStatus:superseded.has(card.id)?'superseded':card.status,score,matched,source:card.source,sourceState,related:card.related,supersedes:card.supersedes,replacedBy,feedback:feedbackSummary};
   });
-  return {mode:'local-cue-matching',hits,totalMatches:ranked.length,hint:hits.length?'Read source before relying on recalled candidates.':'No cue match; try alternate cues or raw search. Missing cards do not imply no history.'};
+  return {mode:'local-cue-matching',hits,warnings,totalMatches:ranked.length,hint:hits.length?'Read source before relying on recalled candidates.':'No cue match; try alternate cues or raw search. Missing cards do not imply no history.'};
 }

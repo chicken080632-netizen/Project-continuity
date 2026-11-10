@@ -1,4 +1,4 @@
-# 安装与迁移 · v2.4
+# 安装与迁移 · v2.5
 
 本包提供按工种协作与本地项目记忆。推荐 Node.js 18+，无 npm 依赖；旧 Python 3.9+ 初始化器仍保留，但新增归档等功能使用 Node 脚本。
 
@@ -54,3 +54,7 @@ node --test <本包绝对路径>/scripts/test_memory.mjs <本包绝对路径>/sc
 feedback 记录有原文依据的评价，不自动更改事实或排名；task-pin/task-check固定并核对任务需求来源。中途变更须主Agent实际通知、使旧稿失效并使用新任务ID重做。详见 references/feedback-revisions.md。
 
 完整回归命令：node --test scripts/test_memory.mjs scripts/test_recall.mjs scripts/test_incremental.mjs scripts/test_feedback_revision.mjs。
+
+## v2.5 完整性与恢复
+
+新增feedback-resolve、review-skip、task-bind、task-verify、task-health、memory-health，doctor聚合各层检查。recall会隔离损坏记录并返回warnings。原始数据与旧版pin保留兼容，不自动迁移或删除异常文件。用新目录恢复备份再体检，不直接覆盖尚未检查的历史。详见references/integrity-v2.5.md。

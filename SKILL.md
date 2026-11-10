@@ -3,7 +3,9 @@ name: project-continuity
 description: Maintain local project memory across chats and coordinate role-based agents with compact artifact handoffs, including temporary image workers. Use for continuity setup, resuming projects, checkpoints, conversation archiving, or requested multi-agent workflows; not routine factual questions.
 ---
 
-# 项目协作与长期记忆 · v2.4
+# 项目协作与长期记忆 · v2.5
+
+可靠性与恢复按 [v2.5 完整性协议](references/integrity-v2.5.md) 执行：recall 返回有效候选与 warnings，不能隐瞒损坏记录；doctor 汇总归档、卡片、反馈及任务。无需建卡的归档片段用 review-skip 记录理由和来源，不能算成已提取特征。反馈处理用 feedback-resolve 保存状态/关联卡并重新检索。交付先 task-bind 固定文件与修订，集成前 task-verify 并实际验收内容，不仅检查需求版本。
 
 检索结果被明确评价或纠正时，按 [反馈与修订协议](references/feedback-revisions.md) 保存有原文依据的 feedback，区分用户评价和 agent 自检。不要每次调用都要求用户评分，不自动改排名或把高频反馈当事实。纠正内容需核对后以新卡、别名或明确替代关系补充；保留旧卡和原文。
 
