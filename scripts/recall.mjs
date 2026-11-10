@@ -57,6 +57,21 @@ function validate(root, raw) {
   return {schema:'project-continuity/cue/1',id:raw.id,title:raw.title,summary:raw.summary,status:raw.status,cues,aliases,entities,context,related,supersedes,quote:raw.quote,source:{...source,sha256:ev.sha256},createdAt:new Date().toISOString()};
 }
 export function cueCommand(command,root,opts) {
+  if(command==='feedback') {
+    const cards=list(root),card=cards.find(c=>c.id===opts.card);
+    if(!card) throw Error('Unknown --card');
+    if(!['correct','irrelevant','outdated'].includes(opts.rating)) throw Error('rating must be correct/irrelevant/outdated');
+    for(const key of ['query','reason']) if(typeof opts[key]!=='string'||!opts[key].trim()||opts[key].length>1000) throw Error(`Invalid --${key}`);
+    if(!['user','agent'].includes(opts.actor)) throw Error('actor must be user/agent');
+    if(typeof opts.input!=='string') throw Error('Missing --input (attributed feedback evidence JSON)');
+    const supplied=JSON.parse(readText(path.resolve(opts.input)));
+    const ev=evidence(root,supplied.source);
+    if(typeof supplied.quote!=='string'||!supplied.quote.trim()||!ev.text.includes(supplied.quote)) throw Error('Feedback quote must match source');
+    const id=crypto.randomUUID(),dir=inside(root,'.project-memory/feedback');fs.mkdirSync(dir,{recursive:true});
+    const record={schema:'project-continuity/feedback/1',id,card:card.id,query:opts.query,rating:opts.rating,reason:opts.reason,actor:opts.actor,quote:supplied.quote,source:{...supplied.source,sha256:ev.sha256},createdAt:new Date().toISOString()};
+    fs.writeFileSync(path.join(dir,id+'.json'),JSON.stringify(record,null,2)+'\n',{flag:'wx'});
+    return {saved:id,rankingChanged:false,note:'Feedback is evidence to review, not permission to rewrite cards or user requirements.'};
+  }
   if(command==='coverage') {
     const cards=list(root), archive=inside(root,'.project-memory/archive');
     const sources=[];
@@ -154,11 +169,16 @@ export function cueCommand(command,root,opts) {
     if(score) ranked.push({card,score:score*matched.length,matched});
   }
   ranked.sort((a,b)=>b.score-a.score||a.card.id.localeCompare(b.card.id));
+  const feedbackDir=inside(root,'.project-memory/feedback');
+  const feedback=fs.existsSync(feedbackDir)?fs.readdirSync(feedbackDir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(readText(inside(root,`.project-memory/feedback/${n}`)))):[];
   const hits=ranked.slice(0,limit).map(({card,score,matched})=>{
     let sourceState='unchanged';
     try {if(evidence(root,card.source).sha256!==card.source.sha256) sourceState='changed';} catch {sourceState='unavailable';}
     const replacedBy=cards.filter(c=>c.supersedes.includes(card.id)).map(c=>c.id);
-    return {id:card.id,title:card.title,summary:card.summary,status:card.status,effectiveStatus:superseded.has(card.id)?'superseded':card.status,score,matched,source:card.source,sourceState,related:card.related,supersedes:card.supersedes,replacedBy};
+    const relevantFeedback=feedback.filter(f=>f.card===card.id&&norm(f.query)===norm(opts.query));
+    const feedbackSummary={count:relevantFeedback.length,ratings:{correct:0,irrelevant:0,outdated:0},recent:relevantFeedback.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,3).map(f=>{let sourceState='unchanged';try{if(evidence(root,f.source).sha256!==f.source.sha256)sourceState='changed';}catch{sourceState='unavailable';}return {id:f.id,rating:f.rating,actor:f.actor,reason:f.reason,source:f.source,sourceState};})};
+    for(const f of relevantFeedback) if(Object.hasOwn(feedbackSummary.ratings,f.rating))feedbackSummary.ratings[f.rating]++;
+    return {id:card.id,title:card.title,summary:card.summary,status:card.status,effectiveStatus:superseded.has(card.id)?'superseded':card.status,score,matched,source:card.source,sourceState,related:card.related,supersedes:card.supersedes,replacedBy,feedback:feedbackSummary};
   });
   return {mode:'local-cue-matching',hits,totalMatches:ranked.length,hint:hits.length?'Read source before relying on recalled candidates.':'No cue match; try alternate cues or raw search. Missing cards do not imply no history.'};
 }

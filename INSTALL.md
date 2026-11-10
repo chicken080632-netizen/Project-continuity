@@ -1,4 +1,4 @@
-# 安装与迁移 · v2.3
+# 安装与迁移 · v2.4
 
 本包提供按工种协作与本地项目记忆。推荐 Node.js 18+，无 npm 依赖；旧 Python 3.9+ 初始化器仍保留，但新增归档等功能使用 Node 脚本。
 
@@ -48,3 +48,9 @@ node --test <本包绝对路径>/scripts/test_memory.mjs <本包绝对路径>/sc
 首次接入/路径异常先运行 doctor；每批原文归档后运行 coverage，按未覆盖范围提取特征并remember，再用cue-verify核对。旧INDEX/AGENTS只做最小修复，不整文件覆盖。详见 references/incremental-workflow.md。
 
 完整脚本回归：node --test <skill>/scripts/test_memory.mjs <skill>/scripts/test_recall.mjs <skill>/scripts/test_incremental.mjs。
+
+## v2.4 检索反馈与任务修订
+
+feedback 记录有原文依据的评价，不自动更改事实或排名；task-pin/task-check固定并核对任务需求来源。中途变更须主Agent实际通知、使旧稿失效并使用新任务ID重做。详见 references/feedback-revisions.md。
+
+完整回归命令：node --test scripts/test_memory.mjs scripts/test_recall.mjs scripts/test_incremental.mjs scripts/test_feedback_revision.mjs。

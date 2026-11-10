@@ -1,6 +1,6 @@
 # Project Continuity
 
-**当前版本：v2.3**
+**当前版本：v2.4**
 
 一个面向 Codex 的项目协作与本地长期记忆 Skill。它将详细对话、执行报告和原始证据留在本地，通过特征线索按需找回旧记忆，并根据任务边界组织多 Agent 协作，减少主对话反复携带大量背景材料。
 
@@ -120,3 +120,11 @@ v2.3 开发时记录：11 项通过、1 项因系统不允许创建测试链接�
 - [本地归档与备份](references/local-memory.md)
 - [多 Agent 协作](references/delegation.md)
 - [临时生图 Worker](references/image-workers.md)
+
+## v2.4 更新
+
+- 检索反馈：feedback记录correct/irrelevant/outdated、用户或Agent归因、查询、理由和可核对原文。recall附带同查询反馈及来源状态，不自动改变排名或事实。
+- 任务修订：task-pin固定需求来源，task-check在验收前检查变化；协调Agent负责把新要求转发给Worker、标旧稿失效并用新任务ID重做。
+- 验证：完整脚本回归新增 scripts/test_feedback_revision.mjs；v2.4共13项通过、1项因系统链接权限跳过。原生Worker测试在旧稿完成后注入测试变更，实际通知并重做；这不是对真实用户中途输入、自动取消进程或多分支并发的一般保证。
+
+协议与命令：[检索反馈与任务修订](references/feedback-revisions.md)。

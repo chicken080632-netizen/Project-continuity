@@ -3,7 +3,11 @@ name: project-continuity
 description: Maintain local project memory across chats and coordinate role-based agents with compact artifact handoffs, including temporary image workers. Use for continuity setup, resuming projects, checkpoints, conversation archiving, or requested multi-agent workflows; not routine factual questions.
 ---
 
-# 项目协作与长期记忆 · v2.3
+# 项目协作与长期记忆 · v2.4
+
+检索结果被明确评价或纠正时，按 [反馈与修订协议](references/feedback-revisions.md) 保存有原文依据的 feedback，区分用户评价和 agent 自检。不要每次调用都要求用户评分，不自动改排名或把高频反馈当事实。纠正内容需核对后以新卡、别名或明确替代关系补充；保留旧卡和原文。
+
+多 Agent 执行前为会受需求变更影响的任务 pin 需求文件与修订号；用户改要求后先记录新有效要求，再转发相关 worker、标旧稿失效，以新任务ID固定新修订。集成前 task-check，过期任务不得采纳；源版本一致仍需验收成果内容。具体流程与命令同见上述协议。
 
 项目首次接入或发现路径/记忆异常时，先运行 `node <skill>/scripts/memory.mjs doctor --project <project>`。它只读检查入口与卡片来源，给出修复建议；检查通过不代表宿主自动加载已验证。修复前读取旧文件并准备最小变更，不覆盖既有规则。
 
